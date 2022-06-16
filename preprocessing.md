@@ -1,20 +1,61 @@
----
-title: "R Notebook"
-output: github_document
----
+R Notebook
+================
 
-```{r}
+``` r
 library(MALDIquant)
+```
+
+    ## 
+    ## This is MALDIquant version 1.21
+    ## Quantitative Analysis of Mass Spectrometry Data
+    ##  See '?MALDIquant' for more information about this package.
+
+``` r
 library(MALDIquantForeign)
 library(MALDIrppa)
+```
+
+    ## Loading required package: signal
+
+    ## 
+    ## Attaching package: 'signal'
+
+    ## The following objects are masked from 'package:stats':
+    ## 
+    ##     filter, poly
+
+    ## Loading required package: robustbase
+
+    ## Loading required package: lattice
+
+    ## Loading required package: waveslim
+
+    ## 
+    ## waveslim: Wavelet Method for 1/2/3D Signals (version = 1.8.2)
+
+``` r
 library(tidyverse)
+```
+
+    ## ── Attaching packages ─────────────────────────────────────── tidyverse 1.3.1 ──
+
+    ## ✔ ggplot2 3.3.6     ✔ purrr   0.3.4
+    ## ✔ tibble  3.1.7     ✔ dplyr   1.0.9
+    ## ✔ tidyr   1.2.0     ✔ stringr 1.4.0
+    ## ✔ readr   2.1.2     ✔ forcats 0.5.1
+
+    ## ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+    ## ✖ dplyr::filter() masks signal::filter(), stats::filter()
+    ## ✖ dplyr::lag()    masks stats::lag()
+
+``` r
 library(parallel)
 library(ggpubr)
 library(ggrepel)
 library(MassSpecWavelet)
 ```
 
-```{r}
+``` r
 # Set data and results folders
 basepath = '~/palaeoproteomics/MALDI/spanish_book'
 data_folder = file.path(basepath, 'data')
@@ -27,10 +68,9 @@ iterations = 100
 thScale = 2.5
 n_procs = 6L
 minFreq = 0.6
-
 ```
 
-```{r, message=FALSE}
+``` r
 # Read metadata and data
 uoc_metadata = read.csv(file.path(data_folder,'uoc_metadata.csv'), stringsAsFactors=F)
 uoc_metadata$sample.name = as.character(uoc_metadata$sample.name)
@@ -72,13 +112,25 @@ names(uoc_data) = spectra_metadata$spectra
 
 ## Spectra QC screening
 
-We use MALDIrppa screening function and plot the spectra that are labeled as failure
-```{r}
+We use MALDIrppa screening function and plot the spectra that are
+labeled as failure
+
+``` r
 # Initial screening
 sc.results = screenSpectra(uoc_data)
+```
+
+    ## The default of 'doScale' is FALSE now for stability;
+    ##   set options(mc_doScale_quiet=TRUE) to suppress this (once per session) message
+
+``` r
 rownames(sc.results$est.table) = spectra_metadata$spectra
 plot(sc.results, labels=T)
+```
 
+![](preprocessing_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
+
+``` r
 qc_control = as_tibble(sc.results$est.table)
 failure = qc_control %>% filter(Class == "failure") %>% pull(ID)
 
@@ -95,22 +147,28 @@ p = ggplot(f_spec) +
   geom_line(aes(x=mass, y=intensity)) +
   facet_wrap(vars(spectra), scales = "free_y")
 p
-ggsave('qc_spectra.png', p, path=results_folder, width = 9, height = 6)
+```
 
+![](preprocessing_files/figure-gfm/unnamed-chunk-4-2.png)<!-- -->
+
+``` r
+ggsave('qc_spectra.png', p, path=results_folder, width = 9, height = 6)
 ```
 
 ## Initial preprocessing of the spectra
 
 The initial preprocessing consists of:
 
-1. Squared root intensity transformation.
+1.  Squared root intensity transformation.
 
-2. Undecimated wavelet transform smoothing. `wavSmoothing` function on `MALDIrppa` package
+2.  Undecimated wavelet transform smoothing. `wavSmoothing` function on
+    `MALDIrppa` package
 
-3. Baseline correction
+3.  Baseline correction
 
-4. Probabilistic Quotient Normalization.
-```{r}
+4.  Probabilistic Quotient Normalization.
+
+``` r
 preprocessing = function(x, iters, thScale){
   
   # Intensity transformation
@@ -133,39 +191,37 @@ preprocessing = function(x, iters, thScale){
 }
 ```
 
-
-```{r}
+``` r
 # Preprocess
 preprocessed_l = mclapply(uoc_data, preprocessing, iterations, thScale,
                            mc.cores=n_procs)
 preprocessed_l = unlist(preprocessed_l)
 ```
 
-
 ## Noise estimation and testing
 
 We test 3 different algorithms to estimate noise and detect peaks
 
-1. Median absolute deviation (MAD).
+1.  Median absolute deviation (MAD).
 
-2. SuperSmoother.
+2.  SuperSmoother.
 
-3. Continuous Wavelet Transofrm (CWT). This method works on the raw spectra without any preprocessing.
+3.  Continuous Wavelet Transofrm (CWT). This method works on the raw
+    spectra without any preprocessing.
 
-We test signal-to-noise ratios (SNR) thresholds: 2, 3, 4, 5, 6, 8. on a random sample
+We test signal-to-noise ratios (SNR) thresholds: 2, 3, 4, 5, 6, 8. on a
+random sample
 
-```{r}
+``` r
 snr_values = c(2, 3, 4, 5, 6, 8)
 
 spectra_index = 142
 spectra_test = preprocessed_l[[spectra_index]]
 unproc_spectra_test = uoc_data[[spectra_index]]
 snr_colors= c('turquoise2', 'violetred4', 'red', 'orange', 'green', 'blue')
-
 ```
 
-
-```{r}
+``` r
 custom_peakDetectionCWT = function(s, SNR.Th = 2, nearbyPeak = T){
   majorPeakInfo = peakDetectionCWT(s@intensity, SNR.Th = SNR.Th, nearbyPeak = nearbyPeak)$majorPeakInfo
   tunnedPeakInfo = tuneInPeakInfo(s@intensity, majorPeakInfo)
@@ -234,31 +290,38 @@ plot_noise = function(s, methods, SNRvalues, colors, nps=NULL){
 }
 ```
 
-```{r}
-
+``` r
 plot_noise(
   spectra_test, methods=c('MAD'),
   SNRvalues=snr_values,
   colors=snr_colors
 )
+```
 
+![](preprocessing_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+
+``` r
 plot_noise(
   spectra_test, methods=c('SuperSmoother'),
   SNRvalues=snr_values,
   colors=snr_colors
 )
+```
 
+![](preprocessing_files/figure-gfm/unnamed-chunk-9-2.png)<!-- -->
+
+``` r
 plot_noise(
   spectra_test, methods=c('CWT'),
   SNRvalues=snr_values,
   colors=snr_colors,
   nps=unproc_spectra_test
 )
-
 ```
 
+![](preprocessing_files/figure-gfm/unnamed-chunk-9-3.png)<!-- -->
 
-```{r}
+``` r
 plot_peaks = function(s, p, method, snr, col){
   plot(s,
        xlim=c(min(s@mass), max(s@mass)),
@@ -268,13 +331,11 @@ plot_peaks = function(s, p, method, snr, col){
   points(p, col=col, pch=4)
   legend(x='topright', legend=paste0('SNR=',snr), col=col, lty=1, pch=4)
 }
-
 ```
 
-
 ### MAD noise estimator
-```{r}
 
+``` r
 for (i in 1:length(snr_values)){
   peaks = get_peaks(
     list(spectra_test), detectionMethod='MAD',
@@ -286,9 +347,11 @@ for (i in 1:length(snr_values)){
 }
 ```
 
-### SuperSmoother noise estimator
-```{r}
+![](preprocessing_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-11-2.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-11-3.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-11-4.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-11-5.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-11-6.png)<!-- -->
 
+### SuperSmoother noise estimator
+
+``` r
 for (i in 1:length(snr_values)){
   peaks = get_peaks(
     list(spectra_test), detectionMethod='SuperSmoother',
@@ -300,10 +363,11 @@ for (i in 1:length(snr_values)){
 }
 ```
 
+![](preprocessing_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-12-2.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-12-3.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-12-4.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-12-5.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-12-6.png)<!-- -->
 
 ### CWT noise estimator
-```{r}
 
+``` r
 for (i in 1:length(snr_values)){
   peaks = get_peaks(
     list(unproc_spectra_test), detectionMethod='CWT',
@@ -317,23 +381,21 @@ for (i in 1:length(snr_values)){
 }
 ```
 
+![](preprocessing_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-13-2.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-13-3.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-13-4.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-13-5.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-13-6.png)<!-- -->
 
-The final preprocessing steps are:
-1. Get peaks. We will use a SuperSmoother with SNR=5.
-2. Align the peaks
-3. Bin peaks
-4. filterPeaks that only appeat in one of the 3 replicates
-5. Merge peaks from different replicates from the same sample, using the average intensity
+The final preprocessing steps are: 1. Get peaks. We will use a
+SuperSmoother with SNR=5. 2. Align the peaks 3. Bin peaks 4. filterPeaks
+that only appeat in one of the 3 replicates 5. Merge peaks from
+different replicates from the same sample, using the average intensity
 6. Get and write feature matrix and list of MassPeak
 
+Define some functions for peak alignment based on MALDIquant and
+MALDIrppa. Basically, when creating the reference peaks, we allow the
+use of labels in the filtering step. This way we can account for peaks
+that are exclusive to one species and therefore have less total
+frequency.
 
-Define some functions for peak alignment based on MALDIquant and MALDIrppa. Basically,
-when creating the reference peaks, we allow the use of labels in the filtering step.
-This way we can account for peaks that are exclusive to one species and therefore have less
-total frequency.
-
-
-```{r}
+``` r
 as.binary.matrix = function(m){
   stopifnot(is.matrix(m))
   isNA = which(is.na(m))
@@ -400,14 +462,17 @@ custom_alignPeaks = function(l, minFreq, tolerance, labels, th_peaks=NULL){
   
   return(list(l, warpingFunctions))
 }
-
 ```
 
-
-```{r}
+``` r
 par(mfrow=c(1,1), mar=c(2,1,1,1))
 snr=5
 print(paste0('SNR = ',snr))
+```
+
+    ## [1] "SNR = 5"
+
+``` r
 # Detect peaks
 pl = get_peaks(preprocessed_l, 'SuperSmoother', halfWindowSize=hws, SNR=snr, mc.cores=n_procs)
 
@@ -441,12 +506,20 @@ par(pin=c(5,4))
 cP = countPeaks(peaks_merged)
 plot(cP, type = "n")
 text(cP, label = uoc_metadata$sample.name)
-  
+```
+
+![](preprocessing_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
+
+``` r
 # After filtering peak patterns
 options(repr.plot.width=5, repr.plot.height=4)
 par(mar=c(2,2,2,2), pin=c(5,4))
 peakPatterns(peaks_merged)
-  
+```
+
+![](preprocessing_files/figure-gfm/unnamed-chunk-15-2.png)<!-- -->
+
+``` r
 # Get the feature matrix from the peaks using the spectra to interpolate
 featureMatrix = intensityMatrix(peaks_merged, avgSpectra)
 
@@ -464,8 +537,7 @@ exportMzMl(avgSpectra, path=file.path(data_folder,paste0('final_mzml_spectra_', 
 # Export feature matrix
 write.csv(featureMatrix, row.names=F, col.names=T,
           file=file.path(data_folder, paste0('featureMatrix_', snr, '.csv')))
-
-
 ```
 
-
+    ## Warning in write.csv(featureMatrix, row.names = F, col.names = T, file =
+    ## file.path(data_folder, : attempt to set 'col.names' ignored
