@@ -1,6 +1,6 @@
 ---
 title: "R Notebook"
-output: html_document
+output: github_document
 ---
 
 
@@ -19,6 +19,9 @@ library(limma)
 library(pheatmap)
 library(RColorBrewer)
 library(viridis)
+library(knitr)
+library(ggthemes)
+library(bacollite)
 
 backup_options = options()
 backup_par = par()
@@ -27,7 +30,7 @@ backup_par = par()
 
 # Data analysis of the preprocessed MALDI data
 
-We analyse the preprocessed MALDI data in the form of feature matrices, where samples are the rows and each feature/mass/peak/peptide the columns; the matrix cells are filled with the processed intensity values.
+We analyse the preprocessed MALDI data in the form of feature matrices, where the rows are the samples and each column a feature/mass/peak/peptide; the matrix cells are filled with the processed intensity values.
 
 ```{r}
 basepath = '~/palaeoproteomics/MALDI/spanish_book'
@@ -48,6 +51,8 @@ featMatrix = read_csv(file.path(data_folder,
                                 paste0('featureMatrix_',snr,'.csv')),
                       show_col_types = F) %>%
   as.matrix()
+featMatrix[is.na(featMatrix)] = 0
+
 colnames(featMatrix) = as.character(round(as.numeric(colnames(featMatrix)),3))
 rownames(featMatrix) = uoc_metadata$sample.name
 # Scale
@@ -55,7 +60,7 @@ scaledFeatMatrix = apply(featMatrix, 2, function(x) (x)/sqrt(var(x)))
 ```
 
 
-## Surrogate varaible analysis
+## Surrogate variable analysis
 First of all we will use the `sva` package to estimate and regress out the surrogate variables. For this, we will tell the algorithm which are our variables of interest, _species_ and _book_ and we will let it determine unwanted sources of variation, among which we have the batch.
 
 
@@ -73,7 +78,7 @@ brSVA = fsva(dbdat=t(scaledFeatMatrix), mod=mod, sv=svobj, newdat=t(scaledFeatMa
 brSVA = brSVA$db
 ```
 
-We can calculate F-test for each of the masses to have a preliminary idea of whether they have differences in the different species and books
+We can calculate F-test for each of the masses to have a preliminary idea of whether they have differences in the different species and books. With the corrected data, we compute adjusted p-values (q-value) for each mass for whether there's adifference in the species and quire, using `mod` as a contrast. The method Bonferroni-Hochberg was used to adjust the p-value. The masses with q-value below 0.05 are labelled.
 ```{r, fig.width = 9, fig.height = 6}
 # Add surrogate variables to model and estimate pvalues
 modSV = cbind(mod, svobj$sv)
@@ -83,11 +88,13 @@ pValuesSv = f.pvalue(t(scaledFeatMatrix), modSV, mod0SV)
 qValuesSv = sort(p.adjust(pValuesSv, method="BH"))
 
 sv_qval = tibble(mass = as.numeric(names(qValuesSv)), q_val = qValuesSv)
-sv_qval %>% filter(q_val < 0.05)
+kable(sv_qval %>% filter(q_val < 0.05))
+
 pl = ggplot(sv_qval) +
     geom_point(aes(x=mass, y=-log10(q_val)), size=2, alpha=0.7) +
     geom_hline(yintercept=-log10(0.05), color='red') +
-    geom_text_repel(aes(x=mass, y=-log10(q_val), label=ifelse(q_val<0.05, mass, '')), size=4) +
+    geom_text_repel(aes(x=mass, y=-log10(q_val), label=ifelse(q_val<0.05, mass, '')),
+                    size=3, max.overlaps = ) +
     theme_cowplot() +
     theme(axis.title=element_text(size=12), axis.text=element_text(size=10))
 pl
@@ -104,11 +111,19 @@ ggsave('f_stats_pval.svg', pl, path = results_folder, bg='white',
 We perform a hierarchical clustering on the samples and a PCA.
 
 ### Hierarchical cluster
+The plot shows the hierarchical cluster using ward.D2 as the grouping method.
+The leaf labels show the page, the side (v or r), quire and species.
 ```{r, fig.width = 12, fig.height = 6}
 # Hierarchical cluster
 h = hclust(dist(t(brSVA)), method='ward.D2')
 png(file.path(results_folder,'hier_clust.png'),
     width = 12, height = 6, units = 'in', res = 100)
+a = plot(h, labels=paste0(uoc_metadata$folia, uoc_metadata$side, '-', uoc_metadata$group, '-',
+                      uoc_metadata$species, collapse = NULL),
+     ylab='Distance', xlab='Sample', axes=FALSE, sub='', main='Hierarchical clustering',
+     cex=1
+    )
+dev.off()
 
 svg(file.path(results_folder,'hier_clust.svg'),
     width = 12, height = 6)
@@ -128,6 +143,7 @@ plot(h, labels=paste0(uoc_metadata$folia, uoc_metadata$side, '-', uoc_metadata$g
 
 ### Heatmap
 
+Heatmap including all samples with clustering and showing annotations for species and book
 ```{r, fig.width = 9, fig.height = 7}
 
 annot = uoc_metadata %>%
@@ -140,23 +156,14 @@ ann_colors = list(
     species = c(Goat = "#CC6D68", Sheep = "#DBBD68"), 
     book = c("1" = "#238A8DFF", "2" = "#4B2991")
 )
-col2 = colorRampPalette(c("white","#EACDC2", "#B75D69", "#774C80", "#372549", "#1A1423"))
-
-hm = pheatmap(
-  brSVA, annotation_col = annot, annotation_colors = ann_colors,
-  color=col2(8), treeheight_row = 0, show_rownames = F,
-  clustering_method = 'ward.D2', labels_col = cl, cutree_col=5,
-  annotation_names_col = F, fontsize = 8, cex=1)
-hm
-ggsave('heatmap.png', hm, path=results_folder, width = 9, height = 7,
-       dpi=100, bg='white')
-ggsave('heatmap.svg', hm, path=results_folder, width = 9, height = 7,
-       dpi=100, bg='white')
-
+# col2 = colorRampPalette(c("white","#EACDC2", "#B75D69", "#774C80", "#372549", "#1A1423"))
+col2 = colorRampPalette(c("#FFFFD9", "#C7E9B4", "#7FCDBB", "#41B6C4"))
+col2 = ggthemes_data[["tableau"]][["color-palettes"]][['ordered-sequential']][['Blue-Green Sequential']][['value']]
+col2 = colorRampPalette(c('#feffd9', "#41b7c4"))
 #flip plot
 hm_fl = pheatmap(
   t(brSVA), annotation_row = annot, annotation_colors = ann_colors,
-  color=col2(8), treeheight_col = 0, show_colnames = F,
+  color=col2(5), treeheight_col = 0, show_colnames = F,
   clustering_method = 'ward.D2', labels_row = cl, cutree_row=5,
   annotation_names_row= F, fontsize = 8, cex=1)
 hm_fl
@@ -167,6 +174,11 @@ ggsave('heatmap_flipped.svg', hm_fl, path=results_folder, width = 9, height = 7,
 ```
 
 ### PCA
+
+PCA projection showing principal components 1 and 2 (variance in axis labels).
+The numbers inside the point are the quire and color is by species.
+We also show the eigenvectors of the masses that discriminate between sheep and goat
+and the one that's common to both species.
 ```{r, fig.width = 7, fig.height = 5}
 masses = as.numeric(colnames(scaledFeatMatrix))
 peptides = c(2883, 3017, 3033, 3077, 3093)
@@ -222,6 +234,8 @@ ggsave("pca_loads.svg", plot=p2, device="svg", dpi=100, path=results_folder,
 ```
 
 ## Separate species
+
+We separate the data by species to produce separate heatmaps and PCA plots. 
 ```{r}
 # Separate sheep and goat matrices
 mat_sheep = brSVA[, uoc_metadata$species == 'Sheep']
@@ -244,8 +258,39 @@ cl_goat = paste0(uoc_metadata_goat$folia, uoc_metadata_goat$side, '-', uoc_metad
 
 ```
 
-### PCA by species
 
+
+### Heatmap by species
+
+```{r, fig.width = 9, fig.height = 7}
+#Heatmap for sheep
+
+heatmap_sheep = pheatmap(
+  t(mat_sheep),color=col2(5), treeheight_col = 0, show_colnames = F,
+  clustering_method = 'ward.D2', labels_row = cl_sheep, cutree_row=3,
+  fontsize = 8, main="Sheep")
+heatmap_sheep
+ggsave("heatmap_sheep.png", plot=heatmap_sheep, device="png", dpi=100,
+       path=results_folder, width = 9, height = 7)
+ggsave("heatmap_sheep.svg", plot=heatmap_sheep, device="svg", dpi=100,
+       path=results_folder, width = 9, height = 7)
+
+#Heatmap for goat
+
+heatmap_goat = pheatmap(
+  t(mat_goat), color=col2(5), treeheight_col = 0, show_colnames = F,
+  clustering_method = 'ward.D2', labels_row = cl_goat, cutree_row=2,
+  main="Goat")
+heatmap_goat
+ggsave("heatmap_goat.png", plot=heatmap_goat, device="png", dpi=100,
+       path=results_folder, width = 9, height = 7)
+ggsave("heatmap_goat.svg", plot=heatmap_goat, device="svg", dpi=100,
+       path=results_folder, width = 9, height = 7)
+```
+
+### PCA by species
+Labeled samples are replicates, i.e. samples taken from different pages that belong to the same
+piece of parchment or skin.
 ```{r}
 
 
@@ -273,9 +318,6 @@ sheep_pca_plot = ggplot(sheep_pca_x) +
   theme_cowplot() +
   ggtitle("Sheep")
 sheep_pca_plot
-
-
-
 
 goat_pca = prcomp(t(mat_goat))
 goat_pca_x = as.data.frame(goat_pca$x)
@@ -314,177 +356,16 @@ ggsave("pca_goat.svg", plot=goat_pca_plot, device="svg", dpi=100, path=results_f
 
 ```
 
-### Heatmap by species
-
-```{r, fig.width = 9, fig.height = 7}
-#Heatmap for sheep
-
-heatmap_sheep = pheatmap(
-  t(mat_sheep),color=col2(8), treeheight_col = 0, show_colnames = F,
-  clustering_method = 'ward.D2', labels_row = cl_sheep, cutree_row=3,
-  fontsize = 8, main="Sheep")
-heatmap_sheep
-ggsave("heatmap_sheep.png", plot=heatmap_sheep, device="png", dpi=100,
-       path=results_folder, width = 9, height = 7)
-ggsave("heatmap_sheep.svg", plot=heatmap_sheep, device="svg", dpi=100,
-       path=results_folder, width = 9, height = 7)
-
-#Heatmap for goat
-
-heatmap_goat = pheatmap(
-  t(mat_goat), color=col2(8), treeheight_col = 0, show_colnames = F,
-  clustering_method = 'ward.D2', labels_row = cl_goat, cutree_row=2,
-  main="Goat")
-heatmap_goat
-ggsave("heatmap_goat.png", plot=heatmap_goat, device="png", dpi=100,
-       path=results_folder, width = 9, height = 7)
-ggsave("heatmap_goat.svg", plot=heatmap_goat, device="svg", dpi=100,
-       path=results_folder, width = 9, height = 7)
-```
-
-
-## Statistical testing on each peptide
-Here we build an statistical model for our data that includes the contribution of the species and the book each sample beolongs to.
-
-For sample $i$, and feature peak $j$, the observed intensity signal $y$ is:
-
-$y_{ij} = \alpha_j x_{ij} + \beta_j x_{ij} + \gamma_j x_{ij}$, 
-
-where $\alpha_j$ is the species contribution of the peak $j$ and $\beta_j$ is for the book. The model also accounts for the batch, through parameter $\gamma$.
-
-In the process we follow the following steps:
-
-1. Fit model to the data to estimate all the $\alpha_i$ and $\beta_i$ parameters.
-2. Define the contrasts we are interested in, in this case the difference between _sheep_ and _goat_ and the two books.
-3. Fit the contrasts: perform the statistical testing to the defined contrasts and calcualte the size and and significance of the contrasts. Adjust p-values for multi-testing.
-
-The results are sumarised in a volcano plot, showing the size and significance of the diferences.
-Finally we do several diagnostic plots to determine if the assumptions are fulfilled.
-
-```{r}
-# Models for peptides testing
-LB_Bmod = model.matrix(~0+species+book+batch, data=uoc_metadata)
-
-# fit model on batch corrected data
-fit.LBB = lmFit(brSVA, LB_Bmod)
-
-# Create contrasts
-LBB.contrast = makeContrasts(
-  species_contrast = 'speciesSheep - speciesGoat',
-  book_contrast = 'book2',
-  levels = LB_Bmod
-)
-```
-
-### Test and plot
-
-```{r}
-test.contrasts = function(fit, contr){
-  fit2 = contrasts.fit(fit, contr)
-  fit2 = eBayes(fit2, robust=T, trend=T)
-  return(fit2)
-}
-
-diag_plots = function(fit2, base_main){
-  par(mfrow=c(3,1))
-  # SA Plot: avg vs dispersion
-  plotSA(fit2, col=c('black', 'red'), cex=1.5, main='SA plot')
-  # MA Plot: avg vs log2FC
-  plotMA(fit2, cex=1.5, main='MA plot', status=p.adjust(fit2$F.p.value, method='BH')<0.05,
-         value=T, legend=F)
-  # p.values distriburtion
-  hist(fit2$F.p.value, breaks=20, xlab='p-value',
-       main='p-value distribution')
-  title(base_main, line=1, outer = T, cex=2)
-}
-
-volc_plot = function(fit2, contr, base_main){
-  # volcano plot per contrast coef: log2FC vs -log10pval
-  # Also return a table with the data
-  volcpl = list()
-  ctrs = list()
-  for (coef_idx in 1:length(colnames(contr))){
-    volcdf = data.frame(mass=names(fit2$coefficients[,coef_idx]),
-                        logFC = fit2$coeff[,coef_idx],
-                        adj.p.val = p.adjust(fit2$p.value[,coef_idx], 'BH'),
-                        p.val = fit2$p.value[,coef_idx],
-                        stringsAsFactors = F)
-    volcdf = volcdf %>%  mutate(l = ifelse(volcdf$adj.p.val <= 0.05, volcdf$mass, ''))
-    DEstatus = cut(volcdf$adj.p.val, c(0,0.05,1))
-    levels(DEstatus) = c('(0,0.05]','(0.05,1]')
-    volcdf$DEstatus = DEstatus
-    
-    v = ggplot(volcdf, mapping = aes(x=logFC, y=-log10(adj.p.val))) +
-      geom_point(mapping = aes(color=DEstatus)) +
-      theme_cowplot() +
-      ylab("-log10(FDR)") +
-      geom_hline(yintercept = -log10(0.05), color='red') +
-      scale_color_manual(name='FDR',
-                         values=c('(0,0.05]'='#00BFC4','(0.05,1]'='#F8766D'),
-                         na.value='grey66',
-                         labels=c('FDR<=0.05','FDR>0.05')) +
-      geom_text_repel(aes(label=l), color='black', size=3, max.overlaps = 20) +
-      ggtitle(colnames(fit2$coeff)[coef_idx])
-    
-    v = v + theme(legend.position = 'right')
-
-    ctrs[[colnames(fit2$coeff)[coef_idx]]] = volcdf
-    volcpl[[coef_idx]] = v 
-  }
-  pl = ggarrange(plotlist = volcpl, nrow=1, ncol=length(colnames(contr)),
-                common.legend = TRUE)
-#   table = topTable(fit2, p.value=0.05, number=length(fit2$p.value))
-#   table %>% rownames_to_column('mass') %>% write_csv(paste(base_file, '_table.csv', sep=''))
-  a = list(ctrs, pl)
-  return(a)
-}
-```
-
-```{r, fig.width = 6, fig.height = 7}
-# Test contrasts and plot
-fit2.LBB = test.contrasts(fit.LBB, LBB.contrast)
-diag_plots(fit2.LBB, 'SV corrected data, batch as factor.')
-png(file.path(results_folder, 'model_diag_plots.png'),
-    width=8, height=9, units='in', res=100)
-diag_plots(fit2.LBB, 'SV corrected data, batch as factor.')
-dev.off()
-```
-
-```{r, fig.width = 11, fig.height = 7}
-a = volc_plot(fit2.LBB, LBB.contrast,'SV corrected data, batch as factor.')
-tables.LBB = a[[1]]
-vcpl = a[[2]]
-vcpl
-ggsave('volcano_plot.png', vcpl, path = results_folder, dpi=100, bg="white")
-species.table = tables.LBB$species_contrast
-book.table = tables.LBB$book_contrast
-
-species_peps = species.table %>%
-  filter(adj.p.val<=0.05) %>%
-  arrange(adj.p.val) %>%
-  dplyr::pull(mass) %>%
-  as.numeric()
-
-species.table %>%
-  filter(adj.p.val<=0.05) %>%
-  arrange(adj.p.val) %>%
-  dplyr::select(-DEstatus)
-
-book_peps = book.table %>%
-  filter(adj.p.val<=0.05) %>%
-  arrange(adj.p.val) %>%
-  dplyr::pull(mass) %>%
-  as.numeric()
-book.table %>%
-  filter(adj.p.val<=0.05) %>%
-  arrange(adj.p.val) %>%
-  dplyr::select(-DEstatus)
-
-```
-
 ## Discriminant analysis
 
-Then we use discriminant analysis using binary predictors, implemented in the package _binda_ again to detect peptides contributing to differences in the spectra that can be associated to the species or the book.
+Then we use discriminant analysis using binary predictors, implemented in the package `binda` to detect peptides contributing to differences in the spectra. This is done on a binary basis, accounting for presence or absence of masses. We perform the analysis for:
+1. The whole dataset, searching for peptides that are different between species
+2. For goat samples, searching for peptides that are different between the 2 found clusters above (goat heatmap)
+3. For sheep samples, searching for peptides that are different between the 2 found clusters above (sheep heatmap). We remove the cluster with a single sample as the method needs more than 2 samples in a group for the analysis.
+
+For each case we show the top 20 different masses with the t-Score calculated by `binda`. When the t-Score is positive for a group, it means the mass is present in in, and it will be negative and absent in the other.
+
+### Whole dataset, species is the target
 
 
 ```{r, fig.width = 5, fig.height = 5}
@@ -505,6 +386,7 @@ attr(bindar, 'class') = 'matrix'
 bindar_species = as_tibble(bindar, rownames='mass')
 ```
 
+### Goat samples, book is the target
 ```{r, fig.width = 5, fig.height = 6}
 # For goat
 thresh = optimizeThreshold(X=t(mat_goat), L=uoc_metadata_goat$cluster, verbose=FALSE)
@@ -524,7 +406,8 @@ bindar_goat = as_tibble(bindar, rownames='mass') %>%
   select(-idx)
 ```
 
-We need to remove the single sample from the sheep subset. It is sample UoC24.
+### Sheep samples, book is the target
+We need to remove the single from the sheep subset. It is sample UoC24.
 
 ```{r, fig.width = 5, fig.height = 6}
 # For sheep
@@ -549,13 +432,16 @@ bindar_sheep = as_tibble(bindar, rownames='mass') %>%
   select(-idx)
 ```
 
+
 ## Find non-collagenous peptides masses
 
-```{r}
-library(bacollite)
-```
+The top 20 masses found different between the different clusters for each species are searched against a list of theoretical collagen masses derived from sequence. The idea is to find the masses that don't match, as they are potential non-collagenous masses, indicating different production practises.
+We do 2 rounds of search:
+1. Simple matching. We first try to match the top 20 masses numerically against the theoretical collagen masses, using a tolerance of 0.6.
+2. Bacollite alignment.The matching masses cannot yet be assigned to collagen, and thus need a 2nd round search using bacollite that aligns the theoretical spectra peptides to the samples.
 
 
+Generate the theoretical list of peptides from sequence data
 ```{r}
 parse_seqs = function(species, chain, id, sequence){
   pseq = parse.seq(sequence, max.missed.cleaves = 1)
@@ -591,6 +477,10 @@ top_goat = top_goat %>% select(-t.1, -t.2)
 
 
 ### First round search
+
+This gives us a initial list of non-matching masses, that we can say they are non-collagenous, given the high tolerance allowed.
+
+
 ```{r}
 
 match_binda = function(top_mass, peptides_masses, tol){
@@ -605,7 +495,7 @@ goat_idx_match = do.call(c,
        tol)
 )
 
-top_goat[is.na(goat_idx_match),]
+kable(top_goat[is.na(goat_idx_match),])
 
 
 sheep_idx_match = do.call(c,
@@ -615,16 +505,12 @@ sheep_idx_match = do.call(c,
        tol)
 )
 
-top_sheep[is.na(sheep_idx_match),]
+kable(top_sheep[is.na(sheep_idx_match),])
 
 ```
 
-## Second round search
-
-
-First we get the matching theoretical peptides will be aligned.
-We are also including deamidated od undeamidated versions of the peptides to
-extend the search. Sometimes the other version alignes better to the spectra.
+Now, from the theoretical peptides, we get the matching ones that will be subsequently aligned. It doesn't make sense to try to align the theoretical peptides that don't match at this point.
+We are also including deamidated or undeamidated versions of the peptides to extend the search. Sometimes the other version aligns better to the spectra.
 ```{r}
 
 match_seq = function(p, top_binda, tol) {
@@ -675,6 +561,10 @@ ggplot(comb_match) +
   geom_point(aes(x=mass, y=mass_error, color=species))
 ```
 
+
+## Second round search
+We align the theoretical peptides that matched in the 1st round against the top 20 masses using bacollite.
+
 Use bacollite to read-in the spectra
 ```{r}
 # Read spectra
@@ -700,8 +590,6 @@ names(bl_unproc) = uoc_metadata$sample.name
 bl_goat = bl_unproc[uoc_metadata %>% filter(species=="Goat") %>% pull(sample.name)]
 
 bl_sheep = bl_unproc[uoc_metadata %>% filter(species=="Sheep") %>% pull(sample.name)]
-
-
 
 ```
 
@@ -754,7 +642,7 @@ bac_cor_goat = bac_cor_goat %>% as_tibble() %>%
 ```
 
 Plot correlation results
-```{r, fig.width=7, fig.height=12}
+```{r, fig.width=7, fig.height=15}
 threshold_plot = list(
   ggplot(bac_cor_goat %>% filter(cluster==1)) +
     geom_line(aes(x=cl, y=nh, color=nhyd,
@@ -852,4 +740,167 @@ pl
 
 ggsave('bcl_sheep.png', pl, path = results_folder, height = 12, width = 7)
 ```
+This gives us new masses that even though matched in the 1st round, a 2nd search using bacollite cannot align them to theoretical spectra, or at least the alignment is ambiguous.
+
+
+## Statistical testing on each peptide
+
+The statistical methods and tests in this section, used to search for differential peptides between species or books are not so well established, tested and benchmarked for MALDI-TOF data.
+We err on the side of caution and not included it in the final version of the paper. 
+
+We keep the analysis here in this notebook as we see potential in it in the future, subject to more testing and benchmarking and finer adaptations to this type of data.
+
+First we build a statistical model for our data that includes the contribution of the species and the book each sample belongs to.
+
+For sample $i$, and feature peak $j$, the observed intensity signal $y$ is:
+
+$y_{ij} = \alpha_j x_{ij} + \beta_j x_{ij} + \gamma_j x_{ij}$, 
+
+where $\alpha_j$ is the species contribution of the peak $j$ and $\beta_j$ is for the book. The model also accounts for the batch, through parameter $\gamma$.
+
+In the process we follow the following steps:
+
+1. Fit model to the data to estimate all the $\alpha_i$ and $\beta_i$ parameters.
+2. Define the contrasts we are interested in, in this case the difference between _sheep_ and _goat_ and the two books.
+3. Fit the contrasts: perform the statistical testing to the defined contrasts and calculate the size and significance of the contrasts. Adjust p-values for multiple testing.
+
+The results are summarised in a volcano plot, showing the size and significance of the differences.
+Finally we do several diagnostic plots to determine if the assumptions are fulfilled.
+
+```{r}
+# Models for peptides testing
+LB_Bmod = model.matrix(~0+species+book+batch, data=uoc_metadata)
+
+# fit model on batch corrected data
+fit.LBB = lmFit(brSVA, LB_Bmod)
+
+# Create contrasts
+LBB.contrast = makeContrasts(
+  species_contrast = 'speciesSheep - speciesGoat',
+  book_contrast = 'book2',
+  levels = LB_Bmod
+)
+```
+
+### Test and plot
+
+```{r}
+test.contrasts = function(fit, contr){
+  fit2 = contrasts.fit(fit, contr)
+  fit2 = eBayes(fit2, robust=T, trend=T)
+  return(fit2)
+}
+
+diag_plots = function(fit2, base_main){
+  par(mfrow=c(3,1))
+  # SA Plot: avg vs dispersion
+  plotSA(fit2, col=c('black', 'red'), cex=1.5, main='SA plot')
+  # MA Plot: avg vs log2FC
+  plotMA(fit2, cex=1.5, main='MA plot', status=p.adjust(fit2$F.p.value, method='BH')<0.05,
+         value=T, legend=F)
+  # p.values distriburtion
+  hist(fit2$F.p.value, breaks=20, xlab='p-value',
+       main='p-value distribution')
+  title(base_main, line=1, outer = T, cex=2)
+}
+
+volc_plot = function(fit2, contr, base_main){
+  # volcano plot per contrast coef: log2FC vs -log10pval
+  # Also return a table with the data
+  volcpl = list()
+  ctrs = list()
+  for (coef_idx in 1:length(colnames(contr))){
+    volcdf = data.frame(mass=names(fit2$coefficients[,coef_idx]),
+                        logFC = fit2$coeff[,coef_idx],
+                        adj.p.val = p.adjust(fit2$p.value[,coef_idx], 'BH'),
+                        p.val = fit2$p.value[,coef_idx],
+                        stringsAsFactors = F)
+    volcdf = volcdf %>%  mutate(l = ifelse(volcdf$adj.p.val <= 0.05, volcdf$mass, ''))
+    DEstatus = cut(volcdf$adj.p.val, c(0,0.05,1))
+    levels(DEstatus) = c('(0,0.05]','(0.05,1]')
+    volcdf$DEstatus = DEstatus
+    
+    v = ggplot(volcdf, mapping = aes(x=logFC, y=-log10(adj.p.val))) +
+      geom_point(mapping = aes(color=DEstatus)) +
+      theme_cowplot() +
+      ylab("-log10(FDR)") +
+      geom_hline(yintercept = -log10(0.05), color='red') +
+      scale_color_manual(name='FDR',
+                         values=c('(0,0.05]'='#00BFC4','(0.05,1]'='#F8766D'),
+                         na.value='grey66',
+                         labels=c('FDR<=0.05','FDR>0.05')) +
+      geom_text_repel(aes(label=l), color='black', size=3, max.overlaps = 20) +
+      ggtitle(colnames(fit2$coeff)[coef_idx])
+    
+    v = v + theme(legend.position = 'right')
+
+    ctrs[[colnames(fit2$coeff)[coef_idx]]] = volcdf
+    volcpl[[coef_idx]] = v 
+  }
+  pl = ggarrange(plotlist = volcpl, nrow=1, ncol=length(colnames(contr)),
+                common.legend = TRUE)
+#   table = topTable(fit2, p.value=0.05, number=length(fit2$p.value))
+#   table %>% rownames_to_column('mass') %>% write_csv(paste(base_file, '_table.csv', sep=''))
+  a = list(ctrs, pl)
+  return(a)
+}
+```
+
+Diagnostic plots.
+
+1. SA-plot: Plot of variance dispersion (sigma) against average log intensity for each peptide. It indicates whether there is heteroskedasticity in the data, which happens if variance tends to increase (or decrease) with the intensity value
+2. MA-plot: Log-fold change against average log intensity per peptide. It indicates whether differences between groups are affected by the scale of the intensity values themselves.
+3. Distribution of p-values. It indicates values skewed towards smaller values, which would reject the null hypotheses that there are no differences.
+```{r, fig.width = 6, fig.height = 7}
+# Test contrasts and plot
+fit2.LBB = test.contrasts(fit.LBB, LBB.contrast)
+diag_plots(fit2.LBB, 'SV corrected data, batch as factor.')
+png(file.path(results_folder, 'model_diag_plots.png'),
+    width=8, height=9, units='in', res=100)
+diag_plots(fit2.LBB, 'SV corrected data, batch as factor.')
+dev.off()
+```
+
+
+
+Here we present a volcano plot, that shows the scale of the differences (logFC) between species or books versus the significance of the difference (-log(FDR)).
+```{r, fig.width = 11, fig.height = 7}
+a = volc_plot(fit2.LBB, LBB.contrast,'SV corrected data, batch as factor.')
+tables.LBB = a[[1]]
+vcpl = a[[2]]
+vcpl
+ggsave('volcano_plot.png', vcpl, path = results_folder, dpi=100, bg="white")
+species.table = tables.LBB$species_contrast
+book.table = tables.LBB$book_contrast
+
+species_peps = species.table %>%
+  filter(adj.p.val<=0.05) %>%
+  arrange(adj.p.val) %>%
+  dplyr::pull(mass) %>%
+  as.numeric()
+kable(
+  species.table %>%
+    filter(adj.p.val<=0.05) %>%
+    arrange(adj.p.val) %>%
+    dplyr::select(-DEstatus)
+)
+book_peps = book.table %>%
+  filter(adj.p.val<=0.05) %>%
+  arrange(adj.p.val) %>%
+  dplyr::pull(mass) %>%
+  as.numeric()
+kable(
+  book.table %>%
+    filter(adj.p.val<=0.05) %>%
+    arrange(adj.p.val) %>%
+    dplyr::select(-DEstatus)
+)
+```
+
+
+```{r}
+sessionInfo()
+
+```
+
 

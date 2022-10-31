@@ -31,19 +31,20 @@ library(MALDIrppa)
     ## Loading required package: waveslim
 
     ## 
-    ## waveslim: Wavelet Method for 1/2/3D Signals (version = 1.8.2)
+    ## waveslim: Wavelet Method for 1/2/3D Signals (version = 1.8.4)
 
 ``` r
 library(tidyverse)
 ```
 
-    ## ── Attaching packages ─────────────────────────────────────── tidyverse 1.3.1 ──
+    ## ── Attaching packages
+    ## ───────────────────────────────────────
+    ## tidyverse 1.3.2 ──
 
-    ## ✔ ggplot2 3.3.6     ✔ purrr   0.3.4
-    ## ✔ tibble  3.1.7     ✔ dplyr   1.0.9
-    ## ✔ tidyr   1.2.0     ✔ stringr 1.4.0
-    ## ✔ readr   2.1.2     ✔ forcats 0.5.1
-
+    ## ✔ ggplot2 3.3.6      ✔ purrr   0.3.4 
+    ## ✔ tibble  3.1.8      ✔ dplyr   1.0.10
+    ## ✔ tidyr   1.2.1      ✔ stringr 1.4.1 
+    ## ✔ readr   2.1.2      ✔ forcats 0.5.2 
     ## ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
     ## ✖ dplyr::filter() masks signal::filter(), stats::filter()
     ## ✖ dplyr::lag()    masks stats::lag()
@@ -53,6 +54,7 @@ library(parallel)
 library(ggpubr)
 library(ggrepel)
 library(MassSpecWavelet)
+library(MALDIpqi)
 ```
 
 ``` r
@@ -113,7 +115,7 @@ names(uoc_data) = spectra_metadata$spectra
 ## Spectra QC screening
 
 We use MALDIrppa screening function and plot the spectra that are
-labeled as failure
+labeled as outliers
 
 ``` r
 # Initial screening
@@ -215,7 +217,7 @@ random sample
 ``` r
 snr_values = c(2, 3, 4, 5, 6, 8)
 
-spectra_index = 142
+spectra_index = 100
 spectra_test = preprocessed_l[[spectra_index]]
 unproc_spectra_test = uoc_data[[spectra_index]]
 snr_colors= c('turquoise2', 'violetred4', 'red', 'orange', 'green', 'blue')
@@ -257,7 +259,7 @@ get_peaks = function(sl, detectionMethod='SuperSmoother', ...){
 }
 
 plot_noise = function(s, methods, SNRvalues, colors, nps=NULL){
-  par(mfrow=c(length(methods),1))
+  par(mfrow=c(length(methods),1), cex=1)
   for (m in methods){
     if (m != 'CWT'){
       noise = estimateNoise(spectra_test, method=m)
@@ -292,34 +294,14 @@ plot_noise = function(s, methods, SNRvalues, colors, nps=NULL){
 
 ``` r
 plot_noise(
-  spectra_test, methods=c('MAD'),
-  SNRvalues=snr_values,
-  colors=snr_colors
-)
-```
-
-![](preprocessing_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
-
-``` r
-plot_noise(
-  spectra_test, methods=c('SuperSmoother'),
-  SNRvalues=snr_values,
-  colors=snr_colors
-)
-```
-
-![](preprocessing_files/figure-gfm/unnamed-chunk-9-2.png)<!-- -->
-
-``` r
-plot_noise(
-  spectra_test, methods=c('CWT'),
+  spectra_test, methods=c('MAD', 'SuperSmoother', 'CWT'),
   SNRvalues=snr_values,
   colors=snr_colors,
   nps=unproc_spectra_test
 )
 ```
 
-![](preprocessing_files/figure-gfm/unnamed-chunk-9-3.png)<!-- -->
+![](preprocessing_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
 
 ``` r
 plot_peaks = function(s, p, method, snr, col){
@@ -336,6 +318,7 @@ plot_peaks = function(s, p, method, snr, col){
 ### MAD noise estimator
 
 ``` r
+par(mfrow=c(ceiling(length(snr_values)/2),2), cex=1)
 for (i in 1:length(snr_values)){
   peaks = get_peaks(
     list(spectra_test), detectionMethod='MAD',
@@ -347,11 +330,12 @@ for (i in 1:length(snr_values)){
 }
 ```
 
-![](preprocessing_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-11-2.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-11-3.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-11-4.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-11-5.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-11-6.png)<!-- -->
+![](preprocessing_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
 
 ### SuperSmoother noise estimator
 
 ``` r
+par(mfrow=c(ceiling(length(snr_values)/2),2), cex=1)
 for (i in 1:length(snr_values)){
   peaks = get_peaks(
     list(spectra_test), detectionMethod='SuperSmoother',
@@ -363,11 +347,12 @@ for (i in 1:length(snr_values)){
 }
 ```
 
-![](preprocessing_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-12-2.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-12-3.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-12-4.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-12-5.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-12-6.png)<!-- -->
+![](preprocessing_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
 
 ### CWT noise estimator
 
 ``` r
+par(mfrow=c(ceiling(length(snr_values)/2),2), cex=1)
 for (i in 1:length(snr_values)){
   peaks = get_peaks(
     list(unproc_spectra_test), detectionMethod='CWT',
@@ -381,11 +366,11 @@ for (i in 1:length(snr_values)){
 }
 ```
 
-![](preprocessing_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-13-2.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-13-3.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-13-4.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-13-5.png)<!-- -->![](preprocessing_files/figure-gfm/unnamed-chunk-13-6.png)<!-- -->
+![](preprocessing_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
 
-The final preprocessing steps are: 1. Get peaks. We will use a
+The final preprocessing steps are: 1. Find peaks. We will use a
 SuperSmoother with SNR=5. 2. Align the peaks 3. Bin peaks 4. filterPeaks
-that only appeat in one of the 3 replicates 5. Merge peaks from
+that only appear in one of the 3 replicates 5. Merge peaks from
 different replicates from the same sample, using the average intensity
 6. Get and write feature matrix and list of MassPeak
 
@@ -501,23 +486,30 @@ peaks = filterPeaks(
   
 peaks_merged = mergeMassPeaks(peaks, labels = spectra_metadata$sample,
                               method = "mean")
-options(repr.plot.width=6, repr.plot.height=5)
-par(pin=c(5,4))
+```
+
+Final number of peaks per sample
+
+``` r
+par(cex=0.8, mar=c(5, 4, 1, 1))
 cP = countPeaks(peaks_merged)
-plot(cP, type = "n")
+plot(cP, type = "n", xlab='Sample index', ylab='Number of peaks')
 text(cP, label = uoc_metadata$sample.name)
 ```
 
-![](preprocessing_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
+![](preprocessing_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
+Binary represenation of the final feature matrix. Each blue spot in the
+matrix means a given m/z peak (x axis) is present in a given sample (y
+axis). Height in the top plot indicates relative peak frequency in the
+dataset.
 
 ``` r
 # After filtering peak patterns
-options(repr.plot.width=5, repr.plot.height=4)
-par(mar=c(2,2,2,2), pin=c(5,4))
+par(mar=c(2,2,2,2), pin=c(5,4), cex=1)
 peakPatterns(peaks_merged)
 ```
 
-![](preprocessing_files/figure-gfm/unnamed-chunk-15-2.png)<!-- -->
+![](preprocessing_files/figure-gfm/unnamed-chunk-17-1.png)<!-- -->
 
 ``` r
 # Get the feature matrix from the peaks using the spectra to interpolate
@@ -539,5 +531,101 @@ write.csv(featureMatrix, row.names=F, col.names=T,
           file=file.path(data_folder, paste0('featureMatrix_', snr, '.csv')))
 ```
 
-    ## Warning in write.csv(featureMatrix, row.names = F, col.names = T, file =
-    ## file.path(data_folder, : attempt to set 'col.names' ignored
+## Preprocessing for PQI
+
+Illustration of the preprocessing steps prior to the calculation of PQI
+for 2 different samples, including the 3 replicates of each. The top 8
+panels show the raw isotopic distributions for the 8 selected peptides
+and their estimated baseline, whereas the bottom 8 show the processed
+ones and detected peaks
+
+``` r
+spectra_plots = c(
+  "UoC05_1",
+  "UoC05_2",
+  "UoC05_3",
+  "UoC29_1",
+  "UoC29_2",
+  "UoC29_3"
+)
+
+params = list(SNR=1.5, iterations=20, hws_smooth=8, halfWindowSize=20)
+
+prep_plot = plot_pept_spectra(
+  indir = file.path(data_folder, 'UoC_mzml'),
+  spectra_names = spectra_plots,
+  peptides_user = NULL, label_idx = 6, label_func = label_parsed,
+  normalize = T,
+  smooth_method = "SavitzkyGolay",
+  readf = "mzml",
+  hws_smooth = params$hws_smooth,
+  halfWindowSize = params$halfWindowSize,
+  iterations = params$iterations,
+  SNR = params$SNR, n_isopeaks = 5
+)
+
+prep_plot
+```
+
+![](preprocessing_files/figure-gfm/unnamed-chunk-19-1.png)<!-- -->
+
+``` r
+sessionInfo()
+```
+
+    ## R version 4.2.1 (2022-06-23)
+    ## Platform: x86_64-pc-linux-gnu (64-bit)
+    ## Running under: Ubuntu 18.04.6 LTS
+    ## 
+    ## Matrix products: default
+    ## BLAS:   /usr/lib/x86_64-linux-gnu/blas/libblas.so.3.7.1
+    ## LAPACK: /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.7.1
+    ## 
+    ## locale:
+    ##  [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C              
+    ##  [3] LC_TIME=en_GB.UTF-8        LC_COLLATE=en_US.UTF-8    
+    ##  [5] LC_MONETARY=en_GB.UTF-8    LC_MESSAGES=en_US.UTF-8   
+    ##  [7] LC_PAPER=en_GB.UTF-8       LC_NAME=C                 
+    ##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+    ## [11] LC_MEASUREMENT=en_GB.UTF-8 LC_IDENTIFICATION=C       
+    ## 
+    ## attached base packages:
+    ## [1] parallel  stats     graphics  grDevices utils     datasets  methods  
+    ## [8] base     
+    ## 
+    ## other attached packages:
+    ##  [1] MALDIpqi_0.0.1         MassSpecWavelet_1.62.0 ggrepel_0.9.1         
+    ##  [4] ggpubr_0.4.0           forcats_0.5.2          stringr_1.4.1         
+    ##  [7] dplyr_1.0.10           purrr_0.3.4            readr_2.1.2           
+    ## [10] tidyr_1.2.1            tibble_3.1.8           ggplot2_3.3.6         
+    ## [13] tidyverse_1.3.2        MALDIrppa_1.1.0-1      waveslim_1.8.4        
+    ## [16] lattice_0.20-45        robustbase_0.95-0      signal_0.7-7          
+    ## [19] MALDIquantForeign_0.13 MALDIquant_1.21       
+    ## 
+    ## loaded via a namespace (and not attached):
+    ##  [1] nlme_3.1-159             fs_1.5.2                 lubridate_1.8.0         
+    ##  [4] httr_1.4.4               tools_4.2.1              backports_1.4.1         
+    ##  [7] utf8_1.2.2               R6_2.5.1                 DBI_1.1.3               
+    ## [10] colorspace_2.0-3         withr_2.5.0              gridExtra_2.3           
+    ## [13] tidyselect_1.1.2         compiler_4.2.1           textshaping_0.3.6       
+    ## [16] cli_3.4.0                rvest_1.0.3              readBrukerFlexData_1.9.0
+    ## [19] xml2_1.3.3               labeling_0.4.2           scales_1.2.1            
+    ## [22] DEoptimR_1.0-11          systemfonts_1.0.4        digest_0.6.29           
+    ## [25] rmarkdown_2.16           base64enc_0.1-3          pkgconfig_2.0.3         
+    ## [28] htmltools_0.5.3          highr_0.9                dbplyr_2.2.1            
+    ## [31] fastmap_1.1.0            rlang_1.0.5              readxl_1.4.1            
+    ## [34] rstudioapi_0.14          generics_0.1.3           farver_2.1.1            
+    ## [37] jsonlite_1.8.0           car_3.1-0                googlesheets4_1.0.1     
+    ## [40] magrittr_2.0.3           Rcpp_1.0.9               munsell_0.5.0           
+    ## [43] fansi_1.0.3              abind_1.4-5              lifecycle_1.0.2         
+    ## [46] stringi_1.7.8            yaml_2.3.5               carData_3.0-5           
+    ## [49] MASS_7.3-58              readMzXmlData_2.8.1      grid_4.2.1              
+    ## [52] bacollite_1.0.1          crayon_1.5.1             cowplot_1.1.1           
+    ## [55] haven_2.5.1              hms_1.1.2                knitr_1.40              
+    ## [58] pillar_1.8.1             ggsignif_0.6.3           reprex_2.0.2            
+    ## [61] XML_3.99-0.10            glue_1.6.2               evaluate_0.16           
+    ## [64] data.table_1.14.2        modelr_0.1.9             vctrs_0.4.1             
+    ## [67] tzdb_0.3.0               cellranger_1.1.0         gtable_0.3.1            
+    ## [70] assertthat_0.2.1         xfun_0.33                broom_1.0.1             
+    ## [73] rstatix_0.7.0            ragg_1.2.2               googledrive_2.0.0       
+    ## [76] gargle_1.2.0             ellipsis_0.3.2           MALDIutils_0.1.0

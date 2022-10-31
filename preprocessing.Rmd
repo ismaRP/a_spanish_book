@@ -1,6 +1,6 @@
 ---
 title: "R Notebook"
-output: html_document
+output: github_document
 ---
 
 ```{r}
@@ -12,6 +12,7 @@ library(parallel)
 library(ggpubr)
 library(ggrepel)
 library(MassSpecWavelet)
+library(MALDIpqi)
 ```
 
 ```{r}
@@ -72,7 +73,7 @@ names(uoc_data) = spectra_metadata$spectra
 
 ## Spectra QC screening
 
-We use MALDIrppa screening function and plot the spectra that are labeled as failure
+We use MALDIrppa screening function and plot the spectra that are labeled as outliers
 ```{r}
 # Initial screening
 sc.results = screenSpectra(uoc_data)
@@ -157,7 +158,7 @@ We test signal-to-noise ratios (SNR) thresholds: 2, 3, 4, 5, 6, 8. on a random s
 ```{r}
 snr_values = c(2, 3, 4, 5, 6, 8)
 
-spectra_index = 142
+spectra_index = 100
 spectra_test = preprocessed_l[[spectra_index]]
 unproc_spectra_test = uoc_data[[spectra_index]]
 snr_colors= c('turquoise2', 'violetred4', 'red', 'orange', 'green', 'blue')
@@ -201,7 +202,7 @@ get_peaks = function(sl, detectionMethod='SuperSmoother', ...){
 }
 
 plot_noise = function(s, methods, SNRvalues, colors, nps=NULL){
-  par(mfrow=c(length(methods),1))
+  par(mfrow=c(length(methods),1), cex=1)
   for (m in methods){
     if (m != 'CWT'){
       noise = estimateNoise(spectra_test, method=m)
@@ -234,27 +235,14 @@ plot_noise = function(s, methods, SNRvalues, colors, nps=NULL){
 }
 ```
 
-```{r}
+```{r, fig.height=12, fig.width=8}
 
 plot_noise(
-  spectra_test, methods=c('MAD'),
-  SNRvalues=snr_values,
-  colors=snr_colors
-)
-
-plot_noise(
-  spectra_test, methods=c('SuperSmoother'),
-  SNRvalues=snr_values,
-  colors=snr_colors
-)
-
-plot_noise(
-  spectra_test, methods=c('CWT'),
+  spectra_test, methods=c('MAD', 'SuperSmoother', 'CWT'),
   SNRvalues=snr_values,
   colors=snr_colors,
   nps=unproc_spectra_test
 )
-
 ```
 
 
@@ -273,8 +261,8 @@ plot_peaks = function(s, p, method, snr, col){
 
 
 ### MAD noise estimator
-```{r}
-
+```{r, fig.width=10, fig.height=8}
+par(mfrow=c(ceiling(length(snr_values)/2),2), cex=1)
 for (i in 1:length(snr_values)){
   peaks = get_peaks(
     list(spectra_test), detectionMethod='MAD',
@@ -287,8 +275,8 @@ for (i in 1:length(snr_values)){
 ```
 
 ### SuperSmoother noise estimator
-```{r}
-
+```{r, fig.width=10, fig.height=8}
+par(mfrow=c(ceiling(length(snr_values)/2),2), cex=1)
 for (i in 1:length(snr_values)){
   peaks = get_peaks(
     list(spectra_test), detectionMethod='SuperSmoother',
@@ -302,8 +290,8 @@ for (i in 1:length(snr_values)){
 
 
 ### CWT noise estimator
-```{r}
-
+```{r, fig.width=10, fig.height=8}
+par(mfrow=c(ceiling(length(snr_values)/2),2), cex=1)
 for (i in 1:length(snr_values)){
   peaks = get_peaks(
     list(unproc_spectra_test), detectionMethod='CWT',
@@ -319,10 +307,10 @@ for (i in 1:length(snr_values)){
 
 
 The final preprocessing steps are:
-1. Get peaks. We will use a SuperSmoother with SNR=5.
+1. Find peaks. We will use a SuperSmoother with SNR=5.
 2. Align the peaks
 3. Bin peaks
-4. filterPeaks that only appeat in one of the 3 replicates
+4. filterPeaks that only appear in one of the 3 replicates
 5. Merge peaks from different replicates from the same sample, using the average intensity
 6. Get and write feature matrix and list of MassPeak
 
@@ -436,17 +424,27 @@ peaks = filterPeaks(
   
 peaks_merged = mergeMassPeaks(peaks, labels = spectra_metadata$sample,
                               method = "mean")
-options(repr.plot.width=6, repr.plot.height=5)
-par(pin=c(5,4))
+```
+
+Final number of peaks per sample
+
+```{r, fig.width=7, fig.height=5}
+par(cex=0.8, mar=c(5, 4, 1, 1))
 cP = countPeaks(peaks_merged)
-plot(cP, type = "n")
+plot(cP, type = "n", xlab='Sample index', ylab='Number of peaks')
 text(cP, label = uoc_metadata$sample.name)
-  
+
+```
+Binary represenation of the final feature matrix. Each blue spot in the matrix means
+a given m/z peak (x axis) is present in a given sample (y axis). Height in the top plot
+indicates relative peak frequency in the dataset.
+```{r, fig.width=8, fig.height=6}
 # After filtering peak patterns
-options(repr.plot.width=5, repr.plot.height=4)
-par(mar=c(2,2,2,2), pin=c(5,4))
+par(mar=c(2,2,2,2), pin=c(5,4), cex=1)
 peakPatterns(peaks_merged)
-  
+```
+
+```{r, warning=FALSE}
 # Get the feature matrix from the peaks using the spectra to interpolate
 featureMatrix = intensityMatrix(peaks_merged, avgSpectra)
 
@@ -468,4 +466,41 @@ write.csv(featureMatrix, row.names=F, col.names=T,
 
 ```
 
+
+## Preprocessing for PQI
+
+Illustration of the preprocessing steps prior to the calculation of PQI for 2 different samples, including the 3 replicates of each. The top 8 panels show the raw isotopic distributions for the 8 selected peptides and their estimated baseline, whereas the bottom 8 show the processed ones and detected peaks
+```{r, warning=FALSE, fig.height=9, fig.width=9}
+spectra_plots = c(
+  "UoC05_1",
+  "UoC05_2",
+  "UoC05_3",
+  "UoC29_1",
+  "UoC29_2",
+  "UoC29_3"
+)
+
+params = list(SNR=1.5, iterations=20, hws_smooth=8, halfWindowSize=20)
+
+prep_plot = plot_pept_spectra(
+  indir = file.path(data_folder, 'UoC_mzml'),
+  spectra_names = spectra_plots,
+  peptides_user = NULL, label_idx = 6, label_func = label_parsed,
+  normalize = T,
+  smooth_method = "SavitzkyGolay",
+  readf = "mzml",
+  hws_smooth = params$hws_smooth,
+  halfWindowSize = params$halfWindowSize,
+  iterations = params$iterations,
+  SNR = params$SNR, n_isopeaks = 5
+)
+
+prep_plot
+
+```
+
+
+```{r}
+sessionInfo()
+```
 
