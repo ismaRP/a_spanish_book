@@ -269,13 +269,13 @@ pl = ggplot(sv_qval) +
     geom_point(aes(x=mass, y=-log10(q_val)), size=2, alpha=0.7) +
     geom_hline(yintercept=-log10(0.05), color='red') +
     geom_text_repel(aes(x=mass, y=-log10(q_val), label=ifelse(q_val<0.05, mass, '')),
-                    size=3, max.overlaps = ) +
+                    size=3, max.overlaps = 20) +
     theme_cowplot() +
     theme(axis.title=element_text(size=12), axis.text=element_text(size=10))
 pl
 ```
 
-    ## Warning: ggrepel: 30 unlabeled data points (too many overlaps). Consider
+    ## Warning: ggrepel: 1 unlabeled data points (too many overlaps). Consider
     ## increasing max.overlaps
 
 ![](data_analysis_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
@@ -285,7 +285,7 @@ ggsave('f_stats_pval.png', pl, path = results_folder, bg='white',
        width = 9, height = 6, dpi=100)
 ```
 
-    ## Warning: ggrepel: 29 unlabeled data points (too many overlaps). Consider
+    ## Warning: ggrepel: 7 unlabeled data points (too many overlaps). Consider
     ## increasing max.overlaps
 
 ``` r
@@ -293,7 +293,7 @@ ggsave('f_stats_pval.svg', pl, path = results_folder, bg='white',
        width = 9, height = 6, dpi=100)
 ```
 
-    ## Warning: ggrepel: 29 unlabeled data points (too many overlaps). Consider
+    ## Warning: ggrepel: 7 unlabeled data points (too many overlaps). Consider
     ## increasing max.overlaps
 
 ## Data visualization and clustering
